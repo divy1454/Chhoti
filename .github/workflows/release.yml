@@ -53,7 +53,8 @@ jobs:
           NOTES: ${{ github.event.head_commit.message }}
         run: |
           N=${{ github.run_number }}
-          cp app/build/outputs/apk/release/app-release.apk "chhoti-v$N.apk"
-          gh release create "v$N" "chhoti-v$N.apk" \
+          cp app/build/outputs/apk/lite/release/app-lite-release.apk "chhoti-lite-v$N.apk"
+          cp app/build/outputs/apk/full/release/app-full-release.apk "chhoti-full-v$N.apk"
+          gh release create "v$N" "chhoti-lite-v$N.apk" "chhoti-full-v$N.apk" \
             --title "Chhoti 1.0.$N" \
             --notes "${NOTES:-Manual build}"

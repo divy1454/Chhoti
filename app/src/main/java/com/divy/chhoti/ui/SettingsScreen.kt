@@ -122,8 +122,10 @@ fun SettingsScreen(vm: ChatViewModel, back: () -> Unit) {
 
             Section("Permissions")
             key(refresh) {
-                Status("Read message notifications (WhatsApp, Instagram, Telegram, SMS…)",
-                    MessageListener.hasAccess(ctx)) { MessageListener.openAccessSettings(ctx) }
+                if (BuildConfig.HAS_MESSAGES) {
+                    Status("Read message notifications (WhatsApp, Instagram, Telegram, SMS…)",
+                        MessageListener.hasAccess(ctx)) { MessageListener.openAccessSettings(ctx) }
+                }
                 Status("Exact reminder times", Reminders.canBeExact(ctx)) {
                     if (Build.VERSION.SDK_INT >= 31) ctx.startActivity(
                         Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${ctx.packageName}"))
@@ -145,7 +147,7 @@ fun SettingsScreen(vm: ChatViewModel, back: () -> Unit) {
             }
 
             Section("Updates")
-            Text("Installed version ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})", color = Muted, fontSize = 13.sp)
+            Text("Installed version ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE}, ${BuildConfig.FLAVOR} edition)", color = Muted, fontSize = 13.sp)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedButton(onClick = { vm.checkUpdate(manual = true) }) { Text("Check for updates") }
                 if (vm.update != null) {

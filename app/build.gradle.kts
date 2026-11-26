@@ -34,6 +34,20 @@ android {
         }
     }
 
+    // lite: installs past Play Protect's sideloading fraud block (no notification reading).
+    // full: everything, including reading WhatsApp/Instagram/Telegram notifications.
+    flavorDimensions += "edition"
+    productFlavors {
+        create("lite") {
+            dimension = "edition"
+            buildConfigField("boolean", "HAS_MESSAGES", "false")
+        }
+        create("full") {
+            dimension = "edition"
+            buildConfigField("boolean", "HAS_MESSAGES", "true")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false

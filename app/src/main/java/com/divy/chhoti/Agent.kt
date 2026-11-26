@@ -212,6 +212,8 @@ Security (non-negotiable):
                 "Only messages that arrived while notification access was on are available.",
             props("app" to s("Optional app filter, e.g. WhatsApp, Instagram."), "limit" to n("How many, up to 40.")),
         ) { a ->
+            if (!BuildConfig.HAS_MESSAGES) return@Tool "This is the Lite edition of Chhoti, which can't read message " +
+                "notifications (Play Protect blocks that feature for sideloaded apps). The Full edition can."
             if (!MessageListener.hasAccess(context)) return@Tool "Notification access is OFF. Ask the user to enable it in Chhoti's Settings."
             val msgs = Store.messages(a.optString("app").ifBlank { null }, a.optInt("limit", 15).coerceIn(1, 40))
             if (msgs.isEmpty()) return@Tool "No messages captured yet."

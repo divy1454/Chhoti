@@ -34,9 +34,11 @@ object Updater {
             val j = JSONObject(resp.body!!.string())
             val code = j.optString("tag_name").removePrefix("v").toIntOrNull() ?: return@withContext null
             val assets = j.optJSONArray("assets") ?: return@withContext null
+            // Stay on the same edition: chhoti-lite-v5.apk / chhoti-full-v5.apk
             for (i in 0 until assets.length()) {
                 val a = assets.getJSONObject(i)
-                if (a.optString("name").endsWith(".apk")) {
+                val name = a.optString("name")
+                if (name.endsWith(".apk") && name.contains("-${BuildConfig.FLAVOR}-")) {
                     return@withContext Release(
                         code, j.optString("name", "v$code"), j.optString("body"),
                         a.getString("browser_download_url"), a.optLong("size", -1)
