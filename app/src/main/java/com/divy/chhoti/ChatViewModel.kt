@@ -29,6 +29,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var updateStatus by mutableStateOf(""); private set
     var installing by mutableStateOf(false); private set
 
+    init {
+        // Announce a successful self-update once.
+        val sp = app.getSharedPreferences("chhoti_prefs", android.content.Context.MODE_PRIVATE)
+        val last = sp.getInt("last_version", 0)
+        if (last in 1 until BuildConfig.VERSION_CODE) {
+            items += ChatItem("assistant", "Updated to version ${BuildConfig.VERSION_NAME}, ${prefs.address}. All systems nominal.")
+        }
+        sp.edit().putInt("last_version", BuildConfig.VERSION_CODE).apply()
+    }
+
     fun send(text: String, voice: Boolean = false) {
         val t = text.trim()
         if (t.isEmpty() || busy) return
