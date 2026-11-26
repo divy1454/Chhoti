@@ -90,18 +90,35 @@ Security (non-negotiable):
 
     // ------------------------------------------------------------------ loop
     suspend fun chat(userText: String, voice: Boolean): AgentReply = withContext(Dispatchers.IO) {
+        // Thinking blocks are signed against the exact system prompt they were made with. Our
+        // prompt changes between turns (clock, memories), so drop them from earlier turns.
+        // Earlier-turn thinking isn't needed by the API anyway.
+        stripThinking()
         history.put(JSONObject().put("role", "user").put("content", userText))
+        // One fixed system prompt for the whole turn, so tool-use rounds stay consistent.
+        val sys = system(voice)
         val pending = mutableListOf<Pending>()
         var text = ""
+        var retried = false
         try {
-            for (step in 0 until 10) {
+            var step = 0
+            while (step < 10) {
+                step++
                 val body = JSONObject()
                     .put("model", prefs.model)
-                    .put("max_tokens", 2048)
-                    .put("system", system(voice))
+                    .put("max_tokens", 4096)
+                    .put("system", sys)
                     .put("tools", toolSpecs())
                     .put("messages", history)
-                val resp = Claude.messages(prefs.apiKey, body)
+                val resp = try {
+                    Claude.messages(prefs.apiKey, body)
+                } catch (e: java.io.IOException) {
+                    // Safety net: if the API still objects to a thinking block, strip them all and retry once.
+                    if (!retried && e.message.orEmpty().contains("thinking", ignoreCase = true)) {
+                        retried = true; stripThinking(includeLast = true); step--; continue
+                    }
+                    throw e
+                }
                 val content = resp.getJSONArray("content")
                 history.put(JSONObject().put("role", "assistant").put("content", content))
                 text = (0 until content.length()).map { content.getJSONObject(it) }
@@ -153,6 +170,29 @@ Security (non-negotiable):
         val a = Store.action(id) ?: return "No such action."
         if (a.getString("status") != "pending") return "Already ${a.getString("status")}."
         Store.setActionStatus(id, "rejected"); return "Cancelled."
+    }
+
+    /**
+     * Remove thinking / redacted_thinking blocks from assistant messages. By default the
+     * assistant message in an unfinished tool-use round (the last one) keeps its thinking, as the API requires.
+     */
+    private fun stripThinking(includeLast: Boolean = true) {
+        val lastAssistant = (history.length() - 1 downTo 0).firstOrNull {
+            history.getJSONObject(it).optString("role") == "assistant"
+        } ?: -1
+        for (i in 0 until history.length()) {
+            val m = history.getJSONObject(i)
+            if (m.optString("role") != "assistant") continue
+            if (!includeLast && i == lastAssistant) continue
+            val content = m.optJSONArray("content") ?: continue
+            val kept = JSONArray()
+            for (j in 0 until content.length()) {
+                val b = content.getJSONObject(j)
+                if (b.optString("type") != "thinking" && b.optString("type") != "redacted_thinking") kept.put(b)
+            }
+            if (kept.length() == 0) kept.put(JSONObject().put("type", "text").put("text", "(thinking)"))
+            m.put("content", kept)
+        }
     }
 
     private fun isPlainUser(o: JSONObject) = o.optString("role") == "user" && o.opt("content") is String
