@@ -92,8 +92,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         installing = true
         viewModelScope.launch {
             try {
-                Updater.install(ctx, r) { pct -> updateStatus = "Downloading… $pct%" }
-                updateStatus = "Confirm the update on screen."
+                val apk = Updater.download(ctx, r) { pct -> updateStatus = "Downloading… $pct%" }
+                updateStatus = "Tap Update on the next screen."
+                Updater.openInstaller(ctx, apk)
             } catch (e: Exception) {
                 updateStatus = "Update failed: ${e.message}"
             } finally {
