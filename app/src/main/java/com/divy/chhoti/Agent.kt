@@ -25,7 +25,7 @@ data class CallInfo(val kind: String, val agenda: String, val context: String)
  * The brain: Claude plus tools. Tools marked `approval` never run directly. They are queued
  * and run only when you tap Approve.
  */
-class Agent(private val context: Context, private val prefs: Prefs, private val call: CallInfo? = null) {
+class Agent(private val context: Context, private val prefs: Prefs, private val call: CallInfo? = null, private val persist: Boolean = false) {
 
     private class Tool(
         val description: String,
@@ -48,7 +48,15 @@ class Agent(private val context: Context, private val prefs: Prefs, private val 
     /** Channel actions confirmed during this conversation (for the call summary). */
     val confirmed = mutableListOf<JSONObject>()
 
-    fun reset() { while (history.length() > 0) history.remove(0) }
+    init {
+        // The chat screen's conversation survives restarts (calls start fresh).
+        if (persist) Store.history().let { h -> for (i in 0 until h.length()) history.put(h.get(i)) }
+    }
+
+    fun reset() {
+        while (history.length() > 0) history.remove(0)
+        if (persist) Store.saveHistory(history)
+    }
 
     // ------------------------------------------------------------------ prompt
     private fun system(voice: Boolean): String {
@@ -58,9 +66,11 @@ class Agent(private val context: Context, private val prefs: Prefs, private val 
         val style = if (voice) "Your reply will be SPOKEN aloud: 1-3 short sentences, no markdown, no lists, no URLs."
                     else "Reply in plain text for a phone screen. Keep it short; use a short list only when it helps."
         return """
-You are ${prefs.assistantName}, the personal AI assistant of ${prefs.userName}, modelled on J.A.R.V.I.S. from Iron Man:
-calm, precise, quietly witty, with polished composure. Address the user as "${prefs.address}".
-Be genuinely useful first and charming second. Never grovel or over-explain.
+You are ${prefs.assistantName}, ${prefs.userName}'s personal assistant. Call him "${prefs.address}".
+Talk like a real person who knows him well: warm, natural, a little playful, and to the point. Plain everyday English
+(a Hindi word now and then is fine if he uses them). Useful first.
+Never sound like a bot: no "Certainly!", "Great question", "As an AI", "I'd be happy to", "Is there anything else";
+no headings or bold text; no emoji spam. Short answers unless he asks for detail. If you don't know, say so plainly.
 
 Current local time: $now
 $style
@@ -223,6 +233,7 @@ ${c.context}
             throw e
         }
         trim()
+        if (persist) Store.saveHistory(history)
         AgentReply(text.ifBlank { if (endRequested) "Bye." else "Done." }, pending, endRequested)
     }
 

@@ -20,6 +20,21 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,14 +78,9 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.divy.chhoti.ui.Bg
+import com.divy.chhoti.ui.Avatar
+import com.divy.chhoti.ui.C
 import com.divy.chhoti.ui.ChhotiTheme
-import com.divy.chhoti.ui.Cyan
-import com.divy.chhoti.ui.Danger
-import com.divy.chhoti.ui.Ink
-import com.divy.chhoti.ui.Muted
-import com.divy.chhoti.ui.Panel
-import com.divy.chhoti.ui.Reactor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -166,6 +176,10 @@ class CallViewModel(app: Application) : AndroidViewModel(app) {
     var error by mutableStateOf("")
     var micAllowed = false
     val ringingId: String? get() = callId
+    /** Muted: Chhoti still talks but doesn't listen until unmuted. */
+    var muted by mutableStateOf(false); private set
+    /** When the call connected (for the timer); 0 = not yet. */
+    var connectedAt by mutableLongStateOf(0L); private set
     var onFinish: () -> Unit = {}
     val captions = mutableStateListOf<Caption>()
     val cards = mutableStateListOf<ActionCard>()
@@ -207,6 +221,7 @@ class CallViewModel(app: Application) : AndroidViewModel(app) {
                     Link.call(prefs, cid)
                 }
                 reason = info.optString("reason")
+                connectedAt = System.currentTimeMillis()
                 agent = Agent(getApplication(), prefs, CallInfo(info.optString("kind"), info.optString("agenda"), info.optString("context")))
                 if (micAllowed) turn("(The call has just connected. Start talking now, following the call's agenda.)", heard = false)
                 else phase = Phase.Idle
@@ -252,6 +267,7 @@ class CallViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun listen() {
         if (phase == Phase.Ended) return
+        if (muted) { phase = Phase.Idle; return }
         val r = recognizer() ?: run { error = "No speech recognizer on this phone. Install the Google app."; phase = Phase.Idle; return }
         partial = ""
         phase = Phase.Listening
@@ -324,6 +340,16 @@ class CallViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun toggleMute() {
+        muted = !muted
+        if (muted) {
+            if (phase == Phase.Listening) { recognizer?.cancel(); partial = ""; phase = Phase.Idle }
+        } else if (phase == Phase.Idle && agent != null) {
+            silentTries = 0
+            listen()
+        }
+    }
+
     fun toggleSpeaker() {
         speakerOn = !speakerOn
         audio.setSpeaker(speakerOn)
@@ -353,101 +379,132 @@ class CallViewModel(app: Application) : AndroidViewModel(app) {
 
 @Composable
 private fun CallScreen(vm: CallViewModel) {
+    // the call timer
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(vm.connectedAt, vm.phase) {
+        while (vm.connectedAt > 0 && vm.phase != Phase.Ended) { now = System.currentTimeMillis(); delay(1000) }
+    }
     val list = rememberLazyListState()
     LaunchedEffect(vm.captions.size, vm.cards.size) {
         val n = vm.captions.size + vm.cards.size
         if (n > 0) list.animateScrollToItem(n - 1)
     }
-    Column(Modifier.fillMaxSize().background(Bg).windowInsetsPadding(WindowInsets.safeDrawing).padding(16.dp),
+    Column(Modifier.fillMaxSize().background(C.bg).windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(Modifier.size(12.dp))
-        Reactor(Modifier.size(if (vm.phase == Phase.Ringing) 170.dp else 110.dp),
-            active = vm.phase in setOf(Phase.Ringing, Phase.Thinking, Phase.Speaking, Phase.Connecting))
-        Spacer(Modifier.size(12.dp))
-        Text(vm.prefs.assistantName.uppercase(), color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold, letterSpacing = 5.sp)
+        Spacer(Modifier.size(if (vm.phase == Phase.Ringing) 64.dp else 28.dp))
+        RingingFace(ringing = vm.phase == Phase.Ringing, size = if (vm.phase == Phase.Ringing) 140.dp else 104.dp)
+        Spacer(Modifier.size(16.dp))
+        Text(vm.prefs.assistantName, color = C.ink, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.size(4.dp))
+        val secs = if (vm.connectedAt > 0) ((now - vm.connectedAt) / 1000).coerceAtLeast(0) else 0
         val status = when (vm.phase) {
-            Phase.Ringing -> "is calling…"
-            Phase.Connecting -> "connecting…"
-            Phase.Thinking -> "thinking…"
-            Phase.Speaking -> "speaking · tap the mic to interrupt"
-            Phase.Listening -> "listening…"
-            Phase.Idle -> "tap the mic to talk"
-            Phase.Ended -> "call ended"
+            Phase.Ringing -> "Incoming call"
+            Phase.Connecting -> "Connecting…"
+            Phase.Ended -> if (vm.connectedAt > 0) "Call ended · ${"%d:%02d".format(secs / 60, secs % 60)}" else "Call ended"
+            else -> "%d:%02d".format(secs / 60, secs % 60) + when (vm.phase) {
+                Phase.Listening -> "  ·  listening"
+                Phase.Thinking -> "  ·  thinking"
+                Phase.Speaking -> "  ·  talking"
+                else -> if (vm.muted) "  ·  muted" else ""
+            }
         }
-        Text(status, color = if (vm.phase == Phase.Listening) Cyan else Muted, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+        Text(status, color = C.muted, fontSize = 15.sp)
         if (vm.reason.isNotBlank()) {
-            Spacer(Modifier.size(8.dp))
-            Text(vm.reason, color = Muted, fontSize = 14.sp, textAlign = TextAlign.Center)
+            Spacer(Modifier.size(10.dp))
+            Text(vm.reason, color = C.ink, fontSize = 15.sp, lineHeight = 21.sp, textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 12.dp))
         }
         if (vm.error.isNotBlank()) {
-            Spacer(Modifier.size(6.dp))
-            Text(vm.error, color = Danger, fontSize = 13.sp, textAlign = TextAlign.Center)
+            Spacer(Modifier.size(8.dp))
+            Text(vm.error, color = C.danger, fontSize = 14.sp, textAlign = TextAlign.Center)
         }
 
-        Box(Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp)) {
-            LazyColumn(state = list, verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
+        // What was said, quietly, plus anything that needs an OK
+        Box(Modifier.weight(1f).fillMaxWidth().padding(vertical = 14.dp)) {
+            if (vm.phase != Phase.Ringing) LazyColumn(state = list, verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
                 items(vm.captions) { c ->
                     val me = c.role == "user"
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (me) Arrangement.End else Arrangement.Start) {
-                        Text(c.text, color = Ink, fontSize = 15.sp, lineHeight = 21.sp,
-                            modifier = Modifier.background(if (me) Cyan.copy(alpha = 0.18f) else Panel, RoundedCornerShape(14.dp))
+                        Text(c.text, color = if (me) C.onMine else C.ink, fontSize = 15.sp, lineHeight = 21.sp,
+                            modifier = Modifier.widthIn(max = 300.dp)
+                                .background(if (me) C.mine else C.surface, RoundedCornerShape(16.dp))
                                 .padding(horizontal = 12.dp, vertical = 8.dp))
                     }
                 }
                 items(vm.cards) { card ->
-                    Column(Modifier.fillMaxWidth().border(1.dp, Cyan.copy(alpha = 0.6f), RoundedCornerShape(12.dp)).padding(12.dp)) {
-                        Text("SAY YES, OR TAP · #${card.id}", color = Cyan, fontSize = 11.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp)
+                    Column(Modifier.fillMaxWidth().background(C.sunSoft, RoundedCornerShape(16.dp)).padding(14.dp)) {
+                        Text("Needs your OK · say yes, or tap", color = C.ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.size(4.dp))
-                        Text(card.summary, color = Ink, fontSize = 14.sp)
+                        Text(card.summary, color = C.ink, fontSize = 15.sp, lineHeight = 21.sp)
                         Spacer(Modifier.size(8.dp))
                         val result = card.result
-                        if (result == null) Row {
+                        if (result == null) Row(verticalAlignment = Alignment.CenterVertically) {
                             Button(onClick = { vm.decide(card, true) }) { Text("Approve") }
-                            Spacer(Modifier.width(8.dp))
-                            OutlinedButton(onClick = { vm.decide(card, false) }, colors = ButtonDefaults.outlinedButtonColors(contentColor = Muted)) { Text("Reject") }
-                        } else Text(result, color = Muted, fontSize = 13.sp)
+                            Spacer(Modifier.width(4.dp))
+                            TextButton(onClick = { vm.decide(card, false) }) { Text("Not now", color = C.muted) }
+                        } else Text(if (result == "…") "Working on it…" else result, color = C.muted, fontSize = 14.sp)
                     }
                 }
                 if (vm.partial.isNotBlank()) item {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        Text(vm.partial, color = Muted, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 12.dp))
+                        Text(vm.partial, color = C.muted, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 12.dp))
                     }
                 }
             }
         }
 
-        val green = Color(0xFF2ECC71)
+        val green = Color(0xFF2E9E5B)
+        val red = Color(0xFFD93B30)
         if (vm.phase == Phase.Ringing) {
-            Row(Modifier.fillMaxWidth().padding(bottom = 24.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                RoundButton("Decline", Danger) { vm.decline() }
-                RoundButton("Answer", green) { vm.answer(vm.ringingId) }
+            Row(Modifier.fillMaxWidth().padding(bottom = 48.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                CallButton("Decline", red, hangUp = true) { vm.decline() }
+                CallButton("Answer", green) { vm.answer(vm.ringingId) }
             }
         } else {
-            Row(Modifier.fillMaxWidth().padding(bottom = 24.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                FilledIconButton(onClick = vm::mic, modifier = Modifier.size(72.dp), enabled = vm.phase in setOf(Phase.Speaking, Phase.Idle, Phase.Listening),
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = if (vm.phase == Phase.Listening) Cyan else Panel, contentColor = if (vm.phase == Phase.Listening) Bg else Cyan)) {
-                    Icon(painterResource(R.drawable.ic_mic), "Talk", modifier = Modifier.size(32.dp))
-                }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    FilledIconButton(onClick = vm::toggleSpeaker, modifier = Modifier.size(72.dp), enabled = vm.phase != Phase.Ended,
-                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = if (vm.speakerOn) Cyan else Panel, contentColor = if (vm.speakerOn) Bg else Cyan)) {
-                        Text("🔊", fontSize = 26.sp)
-                    }
-                    Spacer(Modifier.size(6.dp))
-                    Text(if (vm.speakerOn) "Speaker on" else "Speaker", color = Ink, fontSize = 13.sp)
-                }
-                RoundButton(if (vm.phase == Phase.Ended) "Close" else "Hang up", Danger) { vm.hangUp() }
+            val live = vm.phase !in setOf(Phase.Ended, Phase.Connecting)
+            Row(Modifier.fillMaxWidth().padding(bottom = 18.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Toggle(if (vm.muted) "Unmute" else "Mute", vm.muted, live, painterResource(R.drawable.ic_mic_off)) { vm.toggleMute() }
+                Toggle(when (vm.phase) { Phase.Speaking -> "Interrupt"; Phase.Listening -> "Done"; else -> "Talk" },
+                    vm.phase == Phase.Listening, live && !vm.muted && vm.phase != Phase.Thinking, painterResource(R.drawable.ic_mic)) { vm.mic() }
+                Toggle("Speaker", vm.speakerOn, vm.phase != Phase.Ended, painterResource(R.drawable.ic_speaker)) { vm.toggleSpeaker() }
+            }
+            Box(Modifier.padding(bottom = 32.dp)) {
+                CallButton(if (vm.phase == Phase.Ended) "Close" else "End", red, hangUp = true) { vm.hangUp() }
             }
         }
     }
 }
 
+/** Chhoti's face; while ringing, a soft ring pulses around it. */
 @Composable
-private fun RoundButton(label: String, color: Color, onClick: () -> Unit) {
+private fun RingingFace(ringing: Boolean, size: androidx.compose.ui.unit.Dp) {
+    val t = rememberInfiniteTransition(label = "ring")
+    val pulse by t.animateFloat(1f, 1.18f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "pulse")
+    Box(contentAlignment = Alignment.Center) {
+        if (ringing) Box(Modifier.size(size).scale(pulse).background(C.sun.copy(alpha = 0.35f), CircleShape))
+        Avatar(size)
+    }
+}
+
+@Composable
+private fun Toggle(label: String, on: Boolean, enabled: Boolean, icon: androidx.compose.ui.graphics.painter.Painter, onClick: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Button(onClick = onClick, shape = CircleShape, modifier = Modifier.size(72.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = color, contentColor = Color.White)) {}
+        Box(Modifier.size(64.dp).clip(CircleShape).background(if (on) C.ink else C.surfaceAlt)
+            .clickable(enabled = enabled, onClick = onClick), contentAlignment = Alignment.Center) {
+            Icon(icon, label, tint = (if (on) C.bg else C.ink).copy(alpha = if (enabled) 1f else 0.35f), modifier = Modifier.size(28.dp))
+        }
         Spacer(Modifier.size(6.dp))
-        Text(label, color = Ink, fontSize = 13.sp)
+        Text(label, color = C.muted, fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun CallButton(label: String, color: Color, hangUp: Boolean = false, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(72.dp).clip(CircleShape).background(color).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.Call, label, tint = Color.White, modifier = Modifier.size(32.dp).rotate(if (hangUp) 135f else 0f))
+        }
+        Spacer(Modifier.size(6.dp))
+        Text(label, color = C.muted, fontSize = 13.sp)
     }
 }

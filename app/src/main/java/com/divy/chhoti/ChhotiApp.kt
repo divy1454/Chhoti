@@ -33,7 +33,7 @@ class ChhotiApp : Application() {
                 android.app.PendingIntent.FLAG_IMMUTABLE
             )
             val n = NotificationCompat.Builder(context, channel)
-                .setSmallIcon(R.drawable.ic_launcher_fg)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(text))

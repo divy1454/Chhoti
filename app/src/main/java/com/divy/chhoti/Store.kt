@@ -128,4 +128,28 @@ object Store {
 
     @Synchronized
     fun message(id: Int): JSONObject? = objects("messages").firstOrNull { it.getInt("id") == id }
+
+    // --- the chat screen and the conversation behind it (kept across restarts) ----------
+    @Synchronized
+    fun chat(): JSONArray = root.optJSONArray("chat") ?: JSONArray()
+
+    @Synchronized
+    fun saveChat(items: JSONArray) {
+        while (items.length() > 150) items.remove(0)
+        root.put("chat", items); save()
+    }
+
+    private val historyFile: File get() = File(file.parentFile, "conversation.json")
+
+    @Synchronized
+    fun history(): JSONArray = try {
+        if (historyFile.exists()) JSONArray(historyFile.readText()) else JSONArray()
+    } catch (e: Exception) { JSONArray() }
+
+    @Synchronized
+    fun saveHistory(h: JSONArray) {
+        val tmp = File(file.parentFile, "conversation.json.tmp")
+        tmp.writeText(h.toString())
+        tmp.renameTo(historyFile)
+    }
 }

@@ -1,0 +1,6 @@
+<resources>
+    <color name="bg">#FF15131A</color>
+    <style name="Theme.Chhoti" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+    </style>
+</resources>

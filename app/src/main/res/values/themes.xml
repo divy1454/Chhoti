@@ -1,9 +1,7 @@
 <resources>
-    <color name="bg">#FF05080D</color>
-    <color name="cyan">#FF3FD0FF</color>
-    <style name="Theme.Chhoti" parent="android:Theme.Material.NoActionBar">
+    <color name="bg">#FFFAF7F2</color>
+    <color name="icon_bg">#FF1E1B4B</color>
+    <style name="Theme.Chhoti" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/bg</item>
-        <item name="android:statusBarColor">@color/bg</item>
-        <item name="android:navigationBarColor">@color/bg</item>
     </style>
 </resources>

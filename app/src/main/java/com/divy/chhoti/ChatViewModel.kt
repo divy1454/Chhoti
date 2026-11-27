@@ -10,16 +10,26 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
-class ActionCard(val id: Int, val summary: String) {
-    var result by mutableStateOf<String?>(null)
+class ActionCard(val id: Int, val summary: String, result: String? = null) {
+    var result by mutableStateOf(result)
 }
 
-class ChatItem(val role: String, val text: String, val actions: List<ActionCard> = emptyList())
+/** One line on the chat screen. [retry] is set on errors: the text to send again. */
+class ChatItem(
+    val role: String,
+    val text: String,
+    val actions: List<ActionCard> = emptyList(),
+    val time: Long = System.currentTimeMillis(),
+    val retry: String? = null,
+    val voice: Boolean = false,
+)
 
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
     val prefs = Prefs(app)
-    private val agent = Agent(app, prefs)
+    private val agent = Agent(app, prefs, persist = true)
     val speaker = Speaker(app, prefs)
 
     val items = mutableStateListOf<ChatItem>()
@@ -30,31 +40,76 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var installing by mutableStateOf(false); private set
 
     init {
-        // Announce a successful self-update once.
+        load()
+        // Say once that an update went in.
         val sp = app.getSharedPreferences("chhoti_prefs", android.content.Context.MODE_PRIVATE)
         val last = sp.getInt("last_version", 0)
         if (last in 1 until BuildConfig.VERSION_CODE) {
-            items += ChatItem("assistant", "Updated to version ${BuildConfig.VERSION_NAME}, ${prefs.address}. All systems nominal.")
+            add(ChatItem("note", "Updated to ${BuildConfig.VERSION_NAME}"))
         }
         sp.edit().putInt("last_version", BuildConfig.VERSION_CODE).apply()
     }
 
+    // ------------------------------------------------------------------ saved chat
+    private fun load() {
+        val arr = Store.chat()
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val acts = o.optJSONArray("actions") ?: JSONArray()
+            items += ChatItem(
+                o.getString("role"), o.getString("text"),
+                (0 until acts.length()).map { acts.getJSONObject(it) }
+                    .map { ActionCard(it.getInt("id"), it.getString("summary"), it.optString("result").ifBlank { null }) },
+                o.optLong("time", 0L), null,
+            )
+        }
+    }
+
+    private fun save() {
+        val arr = JSONArray()
+        for (it in items) {
+            if (it.role == "error") continue
+            val acts = JSONArray()
+            it.actions.forEach { a -> acts.put(JSONObject().put("id", a.id).put("summary", a.summary).put("result", a.result?.takeIf { r -> r != "…" } ?: "")) }
+            arr.put(JSONObject().put("role", it.role).put("text", it.text).put("time", it.time).put("actions", acts))
+        }
+        Store.saveChat(arr)
+    }
+
+    private fun add(item: ChatItem) {
+        items += item
+        save()
+    }
+
+    // ------------------------------------------------------------------ talking
     fun send(text: String, voice: Boolean = false) {
         val t = text.trim()
         if (t.isEmpty() || busy) return
-        items += ChatItem("user", t)
+        add(ChatItem("user", t, voice = voice))
+        ask(t, voice)
+    }
+
+    /** Send again after an error (the failed turn was already taken back). */
+    fun retry(item: ChatItem) {
+        val t = item.retry ?: return
+        if (busy) return
+        items.remove(item)
+        ask(t, item.voice)
+    }
+
+    private fun ask(t: String, voice: Boolean) {
         if (!prefs.canThink) {
-            items += ChatItem("error", "Pair with the server (or add your Anthropic API key) in Settings first, ${prefs.address}.")
+            items += ChatItem("error", "I'm not connected yet. Pair me with the server in Settings.")
             return
         }
         busy = true
         viewModelScope.launch {
             try {
                 val r = agent.chat(t, voice)
-                items += ChatItem("assistant", r.text, r.pending.map { ActionCard(it.id, it.summary) })
+                add(ChatItem("assistant", r.text, r.pending.map { ActionCard(it.id, it.summary) }))
                 if (voice || prefs.speakReplies) speaker.speak(r.text)
             } catch (e: Exception) {
-                items += ChatItem("error", e.message ?: "Something went wrong.")
+                items += ChatItem("error", e.message ?: "Something went wrong.", retry = t, voice = voice)
             } finally {
                 busy = false
             }
@@ -66,7 +121,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         card.result = "…"
         viewModelScope.launch {
             card.result = withContext(Dispatchers.IO) { if (approve) agent.approve(card.id) else agent.reject(card.id) }
+            save()
         }
+    }
+
+    fun clearChat() {
+        agent.reset()
+        items.clear()
+        save()
     }
 
     // ------------------------------------------------------------------ Chhoti Link
@@ -83,9 +145,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 withContext(Dispatchers.IO) { Link.pair(prefs, url.trim().trimEnd('/'), code, android.os.Build.MODEL) }
                 Push.init(getApplication())
                 refreshLink()
-                "Paired. The API key now lives on the server."
+                "Paired. Your API key now lives on the server."
             } catch (e: Exception) {
-                "Pairing failed: ${e.message}"
+                "Couldn't pair: ${e.message}"
             } finally {
                 pairing = false
             }
@@ -107,21 +169,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 if (!Push.ready(getApplication())) Push.init(getApplication())
                 canRing = me.optBoolean("canRing")
                 val c = me.optJSONObject("config")
-                linkStatus = "Paired as ${me.optString("name")}. " +
-                    (if (canRing) "Calls on: daily at ${c?.optString("dailyCallAt") ?: "?"}, quiet ${c?.optString("quietStart")}–${c?.optString("quietEnd")}."
-                     else if (me.optJSONObject("firebase") == null) "Calls are off until Firebase is set up on the server."
-                     else "Calls: registering this phone…")
+                linkStatus = when {
+                    canRing -> "Connected. I'll call you at ${c?.optString("dailyCallAt") ?: "?"} every day, never between ${c?.optString("quietStart")} and ${c?.optString("quietEnd")}."
+                    me.optJSONObject("firebase") == null -> "Connected. Calls are off until Firebase is set up on the server."
+                    else -> "Connected. Setting up calls on this phone…"
+                }
             } catch (e: Exception) {
-                linkStatus = "Server: ${e.message}"
+                linkStatus = "Can't reach the server: ${e.message}"
             }
         }
     }
 
-    fun clearChat() {
-        agent.reset()
-        items.clear()
-    }
-
+    // ------------------------------------------------------------------ updates
     fun checkUpdate(manual: Boolean = false) {
         viewModelScope.launch {
             try {
@@ -129,7 +188,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 val r = Updater.latest()
                 update = r.takeIf { Updater.isNewer(it) }
                 updateStatus = when {
-                    update != null -> "Version ${update!!.versionCode} is available."
+                    update != null -> "Version 1.0.${update!!.versionCode} is ready."
                     manual -> "You're on the latest version."
                     else -> ""
                 }

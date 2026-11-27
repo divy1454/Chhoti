@@ -97,7 +97,7 @@ object Push {
             Intent(context, CallActionReceiver::class.java).putExtra(CallActivity.EXTRA_CALL, callId), flags)
         val caller = Person.Builder().setName(prefs.assistantName).setImportant(true).build()
         val n = NotificationCompat.Builder(context, CHANNEL_CALLS)
-            .setSmallIcon(R.drawable.ic_launcher_fg)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("${prefs.assistantName} is calling")
             .setContentText(reason)
             .setCategory(NotificationCompat.CATEGORY_CALL)
