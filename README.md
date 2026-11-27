@@ -10,7 +10,7 @@ My personal J.A.R.V.I.S.-style assistant for Android, powered by Claude.
 - **Channel assistant (Chhoti Link):** paired with the server next to Kyuniverse Studio, Chhoti can read the channel's real
   state (what's next, what's waiting for your OK, views per reel, failed jobs, server health) and act on it: approve a post,
   OK a render, reject or ask for changes, request a new reel. Every action needs your yes, spoken on a call or a tap.
-- **Calls you:** the server rings the phone (full-screen incoming call) for the daily channel call at 22:15, when a post
+- **Calls you:** the server rings the phone (full-screen incoming call) when a post
   needs your OK before its deadline, or when something breaks. Answer and talk hands-free; a summary goes to Telegram.
   You can also call Chhoti yourself with the phone button.
 - **Does things for you on the server:** ask her to fix something, look into a failure, change a script or research and

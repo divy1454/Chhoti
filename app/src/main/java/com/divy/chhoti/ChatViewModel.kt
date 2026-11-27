@@ -230,7 +230,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 canRing = me.optBoolean("canRing")
                 val c = me.optJSONObject("config")
                 linkStatus = when {
-                    canRing -> "Connected. I'll call you at ${c?.optString("dailyCallAt") ?: "?"} every day, never between ${c?.optString("quietStart")} and ${c?.optString("quietEnd")}."
+                    canRing -> {
+                        val daily = c?.optString("dailyCallAt").orEmpty()
+                        "Connected. " + (if (daily.isNotBlank()) "I'll call you at $daily every day, and when something needs you"
+                                         else "I'll call you only when something needs you") +
+                            ", never between ${c?.optString("quietStart")} and ${c?.optString("quietEnd")}."
+                    }
                     me.optJSONObject("firebase") == null -> "Connected. Calls are off until Firebase is set up on the server."
                     else -> "Connected. Setting up calls on this phone…"
                 }
