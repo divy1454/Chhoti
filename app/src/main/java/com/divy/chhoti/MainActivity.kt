@@ -20,6 +20,16 @@ import com.divy.chhoti.ui.SettingsScreen
 class MainActivity : ComponentActivity() {
     private val vm: ChatViewModel by viewModels()
 
+    override fun onResume() {
+        super.onResume()
+        vm.watchTasks(true)
+    }
+
+    override fun onPause() {
+        vm.watchTasks(false)
+        super.onPause()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)

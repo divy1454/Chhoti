@@ -114,6 +114,21 @@ fun ChatScreen(vm: ChatViewModel, openSettings: () -> Unit) {
             ctx.startActivity(Intent(ctx, CallActivity::class.java).putExtra(CallActivity.EXTRA_MANUAL, true))
         }
 
+        vm.task?.let { (title, step) ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+                .background(C.surface, RoundedCornerShape(14.dp)).border(1.dp, C.line, RoundedCornerShape(14.dp))
+                .padding(start = 14.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.CircularProgressIndicator(Modifier.size(18.dp), color = C.accent, strokeWidth = 2.dp)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Working on: $title", color = C.ink, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                    Text(step, color = C.muted, fontSize = 12.sp, maxLines = 1)
+                }
+                TextButton(onClick = vm::stopTask) { Text("Stop", color = C.danger) }
+            }
+        }
+
         vm.update?.let { r ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
                 .background(C.sunSoft, RoundedCornerShape(14.dp)).padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),

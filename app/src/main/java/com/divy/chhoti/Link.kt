@@ -72,6 +72,10 @@ object Link {
 
     fun cancel(prefs: Prefs, id: String) { request(prefs, "POST", "/actions/$id/cancel") }
 
+    fun tasks(prefs: Prefs): JSONObject = request(prefs, "GET", "/tasks")
+
+    fun stopTask(prefs: Prefs, id: String) { request(prefs, "POST", "/tasks/$id/stop") }
+
     fun startCall(prefs: Prefs): String = request(prefs, "POST", "/calls").getString("id")
 
     fun call(prefs: Prefs, id: String): JSONObject = request(prefs, "GET", "/calls/$id")

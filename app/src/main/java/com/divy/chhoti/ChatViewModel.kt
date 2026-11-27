@@ -107,6 +107,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val r = agent.chat(t, voice)
                 add(ChatItem("assistant", r.text, r.pending.map { ActionCard(it.id, it.summary) }))
+                if (watching) launch { checkTasks() }
                 if (voice || prefs.speakReplies) speaker.speak(r.text)
             } catch (e: Exception) {
                 items += ChatItem("error", e.message ?: "Something went wrong.", retry = t, voice = voice)
@@ -122,6 +123,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             card.result = withContext(Dispatchers.IO) { if (approve) agent.approve(card.id) else agent.reject(card.id) }
             save()
+            if (watching) checkTasks()
         }
     }
 
@@ -129,6 +131,64 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         agent.reset()
         items.clear()
         save()
+    }
+
+    // ------------------------------------------------------------------ server tasks
+    /** The task running on the server right now: title and latest step (null when nothing runs). */
+    var task by mutableStateOf<Pair<String, String>?>(null); private set
+    private var taskId: String? = null
+    private var watching = false
+
+    /** While the app is on screen, keep an eye on server tasks: the running one and results to put in the chat. */
+    private var watchJob: kotlinx.coroutines.Job? = null
+
+    fun watchTasks(on: Boolean) {
+        watching = on
+        watchJob?.cancel()
+        watchJob = null
+        if (!on || !prefs.paired) return
+        watchJob = viewModelScope.launch {
+            while (watching) {
+                val running = checkTasks()
+                kotlinx.coroutines.delay(if (running) 4_000 else 30_000)
+            }
+        }
+    }
+
+    fun stopTask() {
+        val id = taskId ?: return
+        viewModelScope.launch { try { withContext(Dispatchers.IO) { Link.stopTask(prefs, id) } } catch (_: Exception) {} }
+    }
+
+    private suspend fun checkTasks(): Boolean {
+        val r = try { withContext(Dispatchers.IO) { Link.tasks(prefs) } } catch (e: Exception) { return false }
+        val list = r.optJSONArray("tasks") ?: JSONArray()
+        val seen = prefs.seenTasks.split(",").filter { it.isNotBlank() }.toMutableList()
+        val firstLook = prefs.seenTasks.isBlank()
+        var running: JSONObject? = null
+        // oldest first, so results land in order
+        for (i in list.length() - 1 downTo 0) {
+            val t = list.getJSONObject(i)
+            val id = t.getString("id")
+            val state = t.getString("state")
+            if (state == "running") running = t
+            if (state in setOf("done", "failed", "stopped") && id !in seen) {
+                seen += id
+                if (!firstLook) {
+                    val head = when (state) { "done" -> "Done: ${t.optString("title")}"; "stopped" -> "Stopped: ${t.optString("title")}"; else -> "That one didn't finish: ${t.optString("title")}" }
+                    add(ChatItem("assistant", "$head\n\n${t.optString("result")}".trim()))
+                }
+            }
+        }
+        if (firstLook && seen.isEmpty()) seen += "-"
+        prefs.seenTasks = seen.takeLast(60).joinToString(",")
+        taskId = running?.getString("id")
+        task = running?.let { t ->
+            val steps = t.optJSONArray("steps")
+            val last = if (steps != null && steps.length() > 0) steps.getJSONObject(steps.length() - 1).optString("text") else "Starting…"
+            t.optString("title") to last
+        }
+        return running != null
     }
 
     // ------------------------------------------------------------------ Chhoti Link

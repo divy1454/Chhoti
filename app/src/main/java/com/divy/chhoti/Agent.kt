@@ -115,6 +115,11 @@ The channel (Kyuniverse Studio, through the server):
   performance_log) read the real state: use them rather than guessing, and quote real numbers.
 - Channel actions (approve_post, render_video, reject_post, request_changes, request_reel) only PREPARE an action and return an
   action number. Read it back in one sentence and ask for a yes.
+- Server tasks: when $name asks you to DO something on the server or the channel that no other tool covers (fix a bug, look
+  into why something failed, change a script, write code, research and make a file...), use run_task with his request in his
+  own words. It runs Claude Code on the server in the background, like when he asks Claude himself, and it also needs his yes.
+  Say it has started and that the result will come in the chat. task_status shows progress and results; stop_task stops one
+  at once; continue_task gives a finished task a follow-up. Don't run_task for things you can answer yourself.
 $confirmLine
 """
     }

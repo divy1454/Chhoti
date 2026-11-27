@@ -19,6 +19,9 @@ class ChhotiApp : Application() {
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_UPDATES, "Updates", NotificationManager.IMPORTANCE_DEFAULT)
         )
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_TASKS, "Finished tasks", NotificationManager.IMPORTANCE_DEFAULT)
+        )
         Push.createChannel(this)
         Push.init(this)
     }
@@ -26,6 +29,7 @@ class ChhotiApp : Application() {
     companion object {
         const val CHANNEL_REMINDERS = "reminders"
         const val CHANNEL_UPDATES = "updates"
+        const val CHANNEL_TASKS = "tasks"
 
         fun notify(context: Context, id: Int, channel: String, title: String, text: String) {
             val open = android.app.PendingIntent.getActivity(

@@ -32,6 +32,9 @@ class Prefs(context: Context) {
     /** Paired, or has its own key: either way it can think. */
     val canThink: Boolean get() = paired || apiKey.isNotBlank()
 
+    /** Server tasks whose result is already in the chat (newest 60 ids). */
+    var seenTasks: String get() = str("seen_tasks", ""); set(v) = put("seen_tasks", v)
+
     var speakReplies: Boolean
         get() = p.getBoolean("speak_replies", false)
         set(v) = p.edit().putBoolean("speak_replies", v).apply()

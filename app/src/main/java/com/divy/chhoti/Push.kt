@@ -127,6 +127,13 @@ class ChhotiMessaging : FirebaseMessagingService() {
             val id = d["call_id"] ?: return
             Push.showIncoming(applicationContext, id, d["reason"] ?: "About the channel")
         }
+        if (d["type"] == "task") {
+            val done = d["state"] == "done"
+            val title = d["title"].orEmpty()
+            ChhotiApp.notify(applicationContext, 8000 + (d["task_id"].orEmpty().hashCode() and 0xfff), ChhotiApp.CHANNEL_TASKS,
+                if (done) "Done: $title" else if (d["state"] == "stopped") "Stopped: $title" else "Didn't finish: $title",
+                d["result"].orEmpty())
+        }
     }
 }
 
