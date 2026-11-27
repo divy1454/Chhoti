@@ -1,6 +1,7 @@
 package com.divy.chhoti
 
 import android.content.Context
+import android.media.AudioAttributes
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
@@ -8,7 +9,7 @@ import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 
 /** Text-to-speech using the phone's own engine (Google / Samsung voices, offline-capable). */
-class Speaker(context: Context, private val prefs: Prefs) : TextToSpeech.OnInitListener {
+class Speaker(context: Context, private val prefs: Prefs, private val forCall: Boolean = false) : TextToSpeech.OnInitListener {
     private val tts = TextToSpeech(context.applicationContext, this)
     private val main = Handler(Looper.getMainLooper())
     private var ready = false
@@ -21,6 +22,10 @@ class Speaker(context: Context, private val prefs: Prefs) : TextToSpeech.OnInitL
         ready = true
         tts.language = Locale("en", "IN")
         applyVoice()
+        // On a call, speak on the voice-call stream so it comes out of the earpiece like a phone call.
+        if (forCall) tts.setAudioAttributes(AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {}
             override fun onDone(utteranceId: String?) { finish(utteranceId) }

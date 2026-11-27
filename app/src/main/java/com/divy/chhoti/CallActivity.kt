@@ -108,6 +108,7 @@ class CallActivity : ComponentActivity() {
             window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        volumeControlStream = android.media.AudioManager.STREAM_VOICE_CALL
 
         vm.micAllowed = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         if (savedInstanceState == null) handle(intent)
@@ -147,7 +148,9 @@ class Caption(val role: String, val text: String)
 
 class CallViewModel(app: Application) : AndroidViewModel(app) {
     val prefs = Prefs(app)
-    private val speaker = Speaker(app, prefs)
+    private val speaker = Speaker(app, prefs, forCall = true)
+    private val audio = CallAudio(app)
+    var speakerOn by mutableStateOf(false); private set
     private val main = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private var agent: Agent? = null
@@ -194,6 +197,7 @@ class CallViewModel(app: Application) : AndroidViewModel(app) {
         Push.stopRinging(getApplication())
         incoming = id != null
         phase = Phase.Connecting
+        audio.start()
         viewModelScope.launch {
             try {
                 val info = withContext(Dispatchers.IO) {
@@ -229,6 +233,7 @@ class CallViewModel(app: Application) : AndroidViewModel(app) {
                 for (p in r.pending) cards += ActionCard(p.id, p.summary)
                 if (phase == Phase.Ended) return@launch
                 phase = Phase.Speaking
+                audio.callMode()
                 speaker.speak(r.text) { if (r.endCall) hangUp() else if (phase == Phase.Speaking) listen() }
             } catch (e: Exception) {
                 error = e.message ?: "Something went wrong."
@@ -250,6 +255,7 @@ class CallViewModel(app: Application) : AndroidViewModel(app) {
         val r = recognizer() ?: run { error = "No speech recognizer on this phone. Install the Google app."; phase = Phase.Idle; return }
         partial = ""
         phase = Phase.Listening
+        audio.beforeListening()
         val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
@@ -282,6 +288,11 @@ class CallViewModel(app: Application) : AndroidViewModel(app) {
             when (code) {
                 SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> retry()
                 SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> { error = "Chhoti needs the microphone."; phase = Phase.Idle }
+                SpeechRecognizer.ERROR_AUDIO -> {
+                    // this phone's recognizer can't record in call mode: pause call mode while listening
+                    if (!audio.normalWhileListening) { audio.normalWhileListening = true; main.postDelayed({ if (phase == Phase.Listening) listen() }, 300) }
+                    else { error = "The microphone isn't available."; phase = Phase.Idle }
+                }
                 else -> main.postDelayed({ if (phase == Phase.Listening) listen() }, 600)
             }
         }
@@ -313,11 +324,17 @@ class CallViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun toggleSpeaker() {
+        speakerOn = !speakerOn
+        audio.setSpeaker(speakerOn)
+    }
+
     fun hangUp() {
         if (phase == Phase.Ended) { onFinish(); return }
         phase = Phase.Ended
         speaker.stop()
         recognizer?.cancel()
+        audio.stop()
         val id = callId
         val transcript = JSONArray().apply { captions.forEach { put(JSONObject().put("role", it.role).put("text", it.text)) } }
         val actions = JSONArray().apply { agent?.confirmed?.forEach { put(it) } }
@@ -328,6 +345,7 @@ class CallViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        audio.stop()
         recognizer?.destroy()
         speaker.shutdown()
     }
@@ -409,6 +427,14 @@ private fun CallScreen(vm: CallViewModel) {
                 FilledIconButton(onClick = vm::mic, modifier = Modifier.size(72.dp), enabled = vm.phase in setOf(Phase.Speaking, Phase.Idle, Phase.Listening),
                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = if (vm.phase == Phase.Listening) Cyan else Panel, contentColor = if (vm.phase == Phase.Listening) Bg else Cyan)) {
                     Icon(painterResource(R.drawable.ic_mic), "Talk", modifier = Modifier.size(32.dp))
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    FilledIconButton(onClick = vm::toggleSpeaker, modifier = Modifier.size(72.dp), enabled = vm.phase != Phase.Ended,
+                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = if (vm.speakerOn) Cyan else Panel, contentColor = if (vm.speakerOn) Bg else Cyan)) {
+                        Text("🔊", fontSize = 26.sp)
+                    }
+                    Spacer(Modifier.size(6.dp))
+                    Text(if (vm.speakerOn) "Speaker on" else "Speaker", color = Ink, fontSize = 13.sp)
                 }
                 RoundButton(if (vm.phase == Phase.Ended) "Close" else "Hang up", Danger) { vm.hangUp() }
             }
