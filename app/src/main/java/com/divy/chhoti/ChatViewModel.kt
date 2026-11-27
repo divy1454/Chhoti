@@ -234,7 +234,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         val daily = c?.optString("dailyCallAt").orEmpty()
                         "Connected. " + (if (daily.isNotBlank()) "I'll call you at $daily every day, and when something needs you"
                                          else "I'll call you only when something needs you") +
-                            ", never between ${c?.optString("quietStart")} and ${c?.optString("quietEnd")}."
+                            (c?.optString("quietStart").orEmpty().let { qs -> val qe = c?.optString("quietEnd").orEmpty()
+                                if (qs.isNotBlank() && qe.isNotBlank() && qs != qe) ", never between $qs and $qe." else ", any time of day." })
                     }
                     me.optJSONObject("firebase") == null -> "Connected. Calls are off until Firebase is set up on the server."
                     else -> "Connected. Setting up calls on this phone…"
