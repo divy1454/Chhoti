@@ -49,7 +49,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.compose.runtime.LaunchedEffect
+import androidx.core.content.ContextCompat
 import com.divy.chhoti.BuildConfig
+import com.divy.chhoti.Push
 import com.divy.chhoti.ChatViewModel
 import com.divy.chhoti.MessageListener
 import com.divy.chhoti.Reminders
@@ -82,12 +87,31 @@ fun SettingsScreen(vm: ChatViewModel, back: () -> Unit) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
 
+            Section("Server (Chhoti Link)")
+            var serverUrl by remember { mutableStateOf(p.serverUrl) }
+            var code by remember { mutableStateOf("") }
+            LaunchedEffect(Unit) { vm.refreshLink() }
+            if (p.paired) {
+                Text(vm.linkStatus.ifBlank { "Paired." }, color = Ink, fontSize = 14.sp)
+                Text("Channel tools and calls come from the server next to Kyuniverse Studio. The Anthropic key lives there, not on this phone.",
+                    color = Muted, fontSize = 12.sp)
+                OutlinedButton(onClick = { vm.unpair(); apiKey = p.apiKey }) { Text("Unpair this phone") }
+            } else {
+                OutlinedTextField(serverUrl, { serverUrl = it }, Modifier.fillMaxWidth(), label = { Text("Server address") }, placeholder = { Text("https://…ts.net:8443") }, singleLine = true)
+                OutlinedTextField(code, { code = it.filter(Char::isDigit).take(8) }, Modifier.fillMaxWidth(),
+                    label = { Text("Pairing code (from Telegram)") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    supportingText = { Text("On the server: node ~/Chhoti-Link/server.mjs pair. Pairing moves your API key to the server.") })
+                Button(onClick = { vm.pair(serverUrl, code) }, enabled = !vm.pairing && code.length == 8) { Text("Pair") }
+                if (vm.linkStatus.isNotBlank()) Text(vm.linkStatus, color = Ink, fontSize = 13.sp)
+            }
+
             Section("Brain")
-            OutlinedTextField(apiKey, { apiKey = it; p.apiKey = it }, Modifier.fillMaxWidth(),
+            if (!p.paired) OutlinedTextField(apiKey, { apiKey = it; p.apiKey = it }, Modifier.fillMaxWidth(),
                 label = { Text("Anthropic API key") }, singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                supportingText = { Text("From console.anthropic.com → API Keys. Stored only on this phone.") })
+                supportingText = { Text("From console.anthropic.com → API Keys. Stored only on this phone (not needed once paired).") })
             OutlinedTextField(model, { model = it; p.model = it }, Modifier.fillMaxWidth(),
                 label = { Text("Model") }, singleLine = true,
                 supportingText = { Text("claude-sonnet-5-5 (smart) or claude-haiku-5-5 (cheaper, faster)") })
@@ -132,6 +156,12 @@ fun SettingsScreen(vm: ChatViewModel, back: () -> Unit) {
                     )
                 }
                 Status("Install its own updates", Updater.canInstall(ctx)) { Updater.openInstallPermission(ctx) }
+                if (p.paired) {
+                    Status("Microphone (for calls)", ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                        ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}")))
+                    }
+                    Status("Full-screen incoming calls", Push.canFullScreen(ctx)) { Push.openFullScreenSettings(ctx) }
+                }
             }
 
             Section("Memories")

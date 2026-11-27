@@ -37,6 +37,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -69,6 +70,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.divy.chhoti.CallActivity
 import com.divy.chhoti.ChatItem
 import com.divy.chhoti.ChatViewModel
 import com.divy.chhoti.R
@@ -108,6 +110,12 @@ fun ChatScreen(vm: ChatViewModel, openSettings: () -> Unit) {
                 IconButton(onClick = { vm.speaker.stop(); vm.clearChat() }) {
                     Icon(Icons.Filled.Delete, "Clear chat", tint = Muted)
                 }
+            }
+            if (vm.prefs.paired) {
+                IconButton(onClick = {
+                    vm.speaker.stop()
+                    ctx.startActivity(Intent(ctx, CallActivity::class.java).putExtra(CallActivity.EXTRA_MANUAL, true))
+                }) { Icon(Icons.Filled.Call, "Call about the channel", tint = Cyan) }
             }
             IconButton(onClick = openSettings) { Icon(Icons.Filled.Settings, "Settings", tint = Muted) }
         }
@@ -187,7 +195,9 @@ private fun Greeting(vm: ChatViewModel, modifier: Modifier, onPick: (String) -> 
         Text("Good $part, ${vm.prefs.address}.", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Light)
         Text("How can I help?", color = Muted, fontSize = 14.sp)
         Spacer(Modifier.size(20.dp))
-        for (s in listOf("Any new messages for me?", "Remind me in 10 minutes to stretch", "What's the latest on GTA 6?")) {
+        val ideas = if (vm.prefs.paired) listOf("What needs my OK on the channel?", "How did yesterday's reels do?", "Any new messages for me?")
+                    else listOf("Any new messages for me?", "Remind me in 10 minutes to stretch", "What's the latest on GTA 6?")
+        for (s in ideas) {
             OutlinedButton(onClick = { onPick(s) }, modifier = Modifier.padding(vertical = 3.dp)) {
                 Text(s, color = Cyan, fontSize = 13.sp)
             }

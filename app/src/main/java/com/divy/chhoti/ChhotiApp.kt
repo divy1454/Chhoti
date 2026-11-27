@@ -19,6 +19,8 @@ class ChhotiApp : Application() {
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_UPDATES, "Updates", NotificationManager.IMPORTANCE_DEFAULT)
         )
+        Push.createChannel(this)
+        Push.init(this)
     }
 
     companion object {

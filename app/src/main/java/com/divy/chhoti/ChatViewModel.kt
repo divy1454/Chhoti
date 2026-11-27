@@ -43,8 +43,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val t = text.trim()
         if (t.isEmpty() || busy) return
         items += ChatItem("user", t)
-        if (prefs.apiKey.isBlank()) {
-            items += ChatItem("error", "Add your Anthropic API key in Settings first, ${prefs.address}.")
+        if (!prefs.canThink) {
+            items += ChatItem("error", "Pair with the server (or add your Anthropic API key) in Settings first, ${prefs.address}.")
             return
         }
         busy = true
@@ -66,6 +66,54 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         card.result = "…"
         viewModelScope.launch {
             card.result = withContext(Dispatchers.IO) { if (approve) agent.approve(card.id) else agent.reject(card.id) }
+        }
+    }
+
+    // ------------------------------------------------------------------ Chhoti Link
+    var linkStatus by mutableStateOf(""); private set
+    var pairing by mutableStateOf(false); private set
+    var canRing by mutableStateOf(false); private set
+
+    fun pair(url: String, code: String) {
+        if (pairing) return
+        pairing = true
+        linkStatus = "Pairing…"
+        viewModelScope.launch {
+            linkStatus = try {
+                withContext(Dispatchers.IO) { Link.pair(prefs, url.trim().trimEnd('/'), code, android.os.Build.MODEL) }
+                Push.init(getApplication())
+                refreshLink()
+                "Paired. The API key now lives on the server."
+            } catch (e: Exception) {
+                "Pairing failed: ${e.message}"
+            } finally {
+                pairing = false
+            }
+        }
+    }
+
+    fun unpair() {
+        prefs.deviceToken = ""
+        canRing = false
+        linkStatus = "Unpaired. Add an API key or pair again."
+    }
+
+    /** Ask the server what it knows about this phone (and pick up Firebase settings once they exist). */
+    fun refreshLink() {
+        if (!prefs.paired) return
+        viewModelScope.launch {
+            try {
+                val me = withContext(Dispatchers.IO) { Link.me(prefs) }
+                if (!Push.ready(getApplication())) Push.init(getApplication())
+                canRing = me.optBoolean("canRing")
+                val c = me.optJSONObject("config")
+                linkStatus = "Paired as ${me.optString("name")}. " +
+                    (if (canRing) "Calls on: daily at ${c?.optString("dailyCallAt") ?: "?"}, quiet ${c?.optString("quietStart")}–${c?.optString("quietEnd")}."
+                     else if (me.optJSONObject("firebase") == null) "Calls are off until Firebase is set up on the server."
+                     else "Calls: registering this phone…")
+            } catch (e: Exception) {
+                linkStatus = "Server: ${e.message}"
+            }
         }
     }
 

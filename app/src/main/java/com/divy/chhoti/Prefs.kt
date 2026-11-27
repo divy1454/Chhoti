@@ -2,7 +2,10 @@ package com.divy.chhoti
 
 import android.content.Context
 
-/** Settings, stored privately on the phone. The API key never leaves the device except to Anthropic. */
+/**
+ * Settings, stored privately on the phone. Once paired with Chhoti Link (the server), the Anthropic key lives on the
+ * server only and this phone keeps just its device token.
+ */
 class Prefs(context: Context) {
     private val p = context.getSharedPreferences("chhoti_prefs", Context.MODE_PRIVATE)
 
@@ -19,6 +22,15 @@ class Prefs(context: Context) {
             "(explainer reels) and ChaoScope (gaming Shorts). Speaks English, Hindi and Gujarati.")
         set(v) = put("about", v)
     var ttsVoice: String get() = str("tts_voice", ""); set(v) = put("tts_voice", v)
+
+    // Chhoti Link (the server)
+    var serverUrl: String get() = str("server_url", ""); set(v) = put("server_url", v.trim().trimEnd('/'))
+    var deviceToken: String get() = str("device_token", ""); set(v) = put("device_token", v.trim())
+    /** Firebase app settings from the server (public values), as JSON. */
+    var firebaseConfig: String get() = str("firebase_config", ""); set(v) = put("firebase_config", v)
+    val paired: Boolean get() = deviceToken.isNotBlank()
+    /** Paired, or has its own key: either way it can think. */
+    val canThink: Boolean get() = paired || apiKey.isNotBlank()
 
     var speakReplies: Boolean
         get() = p.getBoolean("speak_replies", false)

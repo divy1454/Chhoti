@@ -28,11 +28,11 @@ class MainActivity : ComponentActivity() {
             registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
                 .launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        if (savedInstanceState == null) vm.checkUpdate()
+        if (savedInstanceState == null) { vm.checkUpdate(); vm.refreshLink() }
 
         setContent {
             ChhotiTheme {
-                var screen by rememberSaveable { mutableStateOf(if (vm.prefs.apiKey.isBlank()) "settings" else "chat") }
+                var screen by rememberSaveable { mutableStateOf(if (!vm.prefs.canThink) "settings" else "chat") }
                 when (screen) {
                     "settings" -> {
                         BackHandler { screen = "chat" }
