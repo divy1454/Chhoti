@@ -84,4 +84,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // Push messages so the server can ring the phone (set up at runtime from the server's settings; no google-services.json)
     implementation("com.google.firebase:firebase-messaging:24.1.0")
+    // Firebase brings an old androidx.fragment; registerForActivityResult needs 1.3+ (lint stops the build otherwise)
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
 }
